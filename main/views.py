@@ -1,15 +1,15 @@
-from django.shortcuts import render, HttpResponse, redirect
-from django.conf import settings
-from .forms import LoginByUsernameForm, RegisterForm, SearchForm
-from .models import User, Profile, Follow
-from django.urls import reverse
-from django.contrib.auth import login, authenticate, logout
-from rest_framework.views import APIView, Response
-from rest_framework.permissions import IsAuthenticated
-from django.http import Http404
-from dotenv import load_dotenv
-import requests
 import os
+import requests
+from django.conf import settings
+from django.contrib.auth import login, authenticate, logout
+from django.http import Http404
+from django.shortcuts import render, HttpResponse, redirect
+from django.urls import reverse
+from dotenv import load_dotenv
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView, Response
+from .forms import LoginByUsernameForm, RegisterForm, SearchForm, ChangePeriodForm
+from .models import User, Profile, Follow, create_task, PeriodicTask, IntervalSchedule
 
 TOKEN_URL = settings.TOKEN_URL
 load_dotenv()
@@ -23,11 +23,14 @@ class FollowCityAPI(APIView):
         user_profile = Profile.objects.get(user=request.user)
         if Follow.objects.filter(city=city, profile=user_profile):
             follow_to_delete = Follow.objects.get(city=city, profile=user_profile)
+            task_to_delete = PeriodicTask.objects.get(name=follow_to_delete.id)
             follow_to_delete.delete()
+            task_to_delete.delete()
             followed = False
         else:
             new_follow = Follow(city=city, profile=user_profile)
             new_follow.save()
+            create_task(new_follow)
         return Response({'followed': followed}, status=200)
 
 
@@ -36,6 +39,14 @@ class NotificationsAPI(APIView):
         user_profile = Profile.objects.get(user=request.user)
         user_profile.notifications = not user_profile.notifications
         user_profile.save()
+        follows = Follow.objects.filter(profile=user_profile)
+        if user_profile.notifications:
+            for follow in follows:
+                create_task(follow)
+        else:
+            for follow in follows:
+                task_to_delete = PeriodicTask.objects.get(name=follow.id)
+                task_to_delete.delete()
         return Response({"notifications": user_profile.notifications}, status=200)
 
 
@@ -103,7 +114,7 @@ class Search(APIView):
                 context['followed'] = True if Follow.objects.filter(profile=Profile.objects.get(user=request.user),
                                                                     city=data['data'][0]['city_name']) else False
             else:
-                raise Http404
+                return HttpResponse('Incorrect input data', status=400)
         return render(request, 'search.html', context=context)
 
 
@@ -149,3 +160,39 @@ class SearchAPI(APIView):
             new_follow = Follow(city=request.session['city'], profile=user_profile)
             new_follow.save()
         return Response({'followed': followed}, status=200)
+
+
+def edit_period(request):
+    if request.method == 'POST':
+        form = ChangePeriodForm(request.POST)
+        if form.is_valid():
+            current_profile = Profile.objects.get(user=request.user)
+            new_period = form.cleaned_data['period']
+            notifications_enabled = form.cleaned_data['notifications']
+            current_profile.period = new_period
+            current_profile.notifications = notifications_enabled
+            current_profile.save()
+            follows = Follow.objects.filter(profile=current_profile)
+            if current_profile.notifications:
+                for follow in follows:
+                    task = PeriodicTask.objects.get(name=follow.id)
+                    task.enabled = False
+                    task.save()
+            else:
+                for follow in follows:
+                    task = PeriodicTask.objects.get(name=follow.id)
+                    task.enabled = True
+                    task.save()
+            if new_period != current_profile.period:
+                for follow in follows:
+                    new_schedule = IntervalSchedule.objects.get_or_create(
+                        every=current_profile.period.seconds,
+                        period=IntervalSchedule.SECONDS
+                    )
+                    task = PeriodicTask.objects.get(name=follow.id)
+                    task.interval = new_schedule
+                    task.save()
+            return redirect(reverse('profile'))
+        else:
+            form = ChangePeriodForm
+    return render(request, 'edit_period.html', {'form': ChangePeriodForm})

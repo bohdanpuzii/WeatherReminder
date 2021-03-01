@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'django_celery_beat',
 ]
 
 MIDDLEWARE = [
@@ -130,18 +131,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/3.1/howto/static-files/
 
-STATIC_ROOT = os.path.join(BASE_DIR, 'static')
-
 STATIC_URL = '/static/'
-
-django_heroku.settings(locals())
-
-STATICFILES_DIRS = (
-    os.path.join(BASE_DIR, 'static'),
-    os.path.join(BASE_DIR, 'assets'),
-)
-
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -151,10 +141,30 @@ REST_FRAMEWORK = {
     ],
 }
 
+django_heroku.settings(locals())
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
 JWT_AUTH = {
     'JWT_EXPIRATION_DELTA': datetime.timedelta(days=14),
 }
 
 TOKEN_URL = ''
 
-TOKEN_URL = 'https://weatherreminder.herokuapp.com/api/token/'
+if DEBUG:
+    TOKEN_URL = 'https://weatherreminder.herokuapp.com/api/token/'
+else:
+    TOKEN_URL = 'http://127.0.0.1:8000/api/token/'
+
+BROKER_URL = 'redis://:p82e1fe7b2e716174ce7ff15634d6665567eb6c87122a1a294b484ff7037f0bac@ec2-54-72-159-57.eu-west-1.compute.amazonaws.com:14179'
+CELERY_RESULT_BACKEND = 'redis://:p82e1fe7b2e716174ce7ff15634d6665567eb6c87122a1a294b484ff7037f0bac@ec2-54-72-159-57.eu-west-1.compute.amazonaws.com:14179'
+CELERY_ACCEPT_CONTENT = ['application/json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Africa/Nairobi'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_HOST_USER = 'bogdan.puziy@gmail.com'
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_PASS')
+EMAIL_PORT = 465
+EMAIL_USE_SSL = True
+
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'

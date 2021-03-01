@@ -1,4 +1,8 @@
 WeatherReminder/__pycache__/
 main/__pycache__/
 main/migrations/__pycache__/
+__pycache__/
+celerybeat-schedule.bak
+celerybeat-schedule.dat
+celerybeat-schedule.dir
 .env
